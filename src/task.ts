@@ -1,4 +1,4 @@
-import { getCategories } from "./mockedApi";
+import { Category } from "./mockedApi";
 
 export interface CategoryListElement {
   name: string;
@@ -9,88 +9,57 @@ export interface CategoryListElement {
   showOnHome: boolean;
 }
 
-export const categoryTree = async (): Promise<CategoryListElement[]> => {
+interface CategoryProvider {
+  getCategories: () => Promise<{ data: Category[] }>;
+}
 
-  const res = await getCategories();
+const getOrder = (title: string, id: number): number => {
+  if (title && title.includes("#")) {
+    const order = parseInt(title.split("#")[0]);
+    return isNaN(order) ? id : order;
+  }
+  return id;
+};
+
+const mapCategory = (category: Category, level: number): CategoryListElement => ({
+  id: category.id,
+  image: category.MetaTagDescription,
+  name: category.name,
+  order: getOrder(category.Title, category.id),
+  children: category.children
+    ? category.children.map((child) => mapCategory(child, level + 1))
+    : [],
+  showOnHome: false,
+});
+
+const sortCategories = (categories: CategoryListElement[]): CategoryListElement[] =>
+  categories.sort((a, b) => a.order - b.order);
+
+const setShowOnHome = (categories: CategoryListElement[]): void => {
+  const toShowOnHome = categories.filter((c) => c.order !== c.id).map((c) => c.id);
+
+  if (categories.length <= 5) {
+    categories.forEach((c) => (c.showOnHome = true));
+  } else if (toShowOnHome.length > 0) {
+    categories.forEach((c) => (c.showOnHome = toShowOnHome.includes(c.id)));
+  } else {
+    categories.forEach((c, index) => (c.showOnHome = index < 3));
+  }
+};
+
+export const categoryTree = async (
+  categoryProvider: CategoryProvider
+): Promise<CategoryListElement[]> => {
+  const res = await categoryProvider.getCategories();
 
   if (!res.data) {
     return [];
   }
 
-  const toShowOnHome: number[] = [];
-
-  let result = res.data.map((c1) => {
-    let order = c1.Title;
-    if (c1.Title && c1.Title.includes("#")) {
-      order = c1.Title.split("#")[0];
-      toShowOnHome.push(c1.id);
-    }
-
-    let orderL1 = parseInt(order);
-    if (isNaN(orderL1)) {
-      orderL1 = c1.id;
-    }
-    let l2Kids = c1.children
-      ? c1.children.map((c2) => {
-          let order2 = c1.Title;
-          if (c2.Title && c2.Title.includes("#")) {
-            order2 = c2.Title.split("#")[0];
-          }
-          let orderL2 = parseInt(order2);
-          if (isNaN(orderL2)) {
-            orderL2 = c2.id;
-          }
-          let l3Kids = c2.children
-            ? c2.children.map((c3) => {
-                let order3 = c1.Title;
-                if (c3.Title && c3.Title.includes("#")) {
-                  order3 = c3.Title.split("#")[0];
-                }
-                let orderL3 = parseInt(order3);
-                if (isNaN(orderL3)) {
-                  orderL3 = c3.id;
-                }
-                return {
-                  id: c3.id,
-                  image: c3.MetaTagDescription,
-                  name: c3.name,
-                  order: orderL3,
-                  children: [],
-                  showOnHome: false,
-                };
-              })
-            : [];
-          l3Kids.sort((a, b) => a.order - b.order);
-          return {
-            id: c2.id,
-            image: c2.MetaTagDescription,
-            name: c2.name,
-            order: orderL2,
-            children: l3Kids,
-            showOnHome: false,
-          };
-        })
-      : [];
-    l2Kids.sort((a, b) => a.order - b.order);
-    return {
-      id: c1.id,
-      image: c1.MetaTagDescription,
-      name: c1.name,
-      order: orderL1,
-      children: l2Kids,
-      showOnHome: false,
-    };
-  });
-
-  result.sort((a, b) => a.order - b.order);
-
-  if (result.length <= 5) {
-    result.forEach((a) => (a.showOnHome = true));
-  } else if (toShowOnHome.length > 0) {
-    result.forEach((x) => (x.showOnHome = toShowOnHome.includes(x.id)));
-  } else {
-    result.forEach((x, index) => (x.showOnHome = index < 3));
-  }
+  const result = res.data.map((category) => mapCategory(category, 0));
+  sortCategories(result);
+  result.forEach((category) => sortCategories(category.children));
+  setShowOnHome(result);
 
   return result;
 };
